@@ -565,7 +565,15 @@ contract PriceFeed is Ownable, CheckContract, BaseMath, IPriceFeed {
     //    }
 
     function _getCurrentBandResponse() internal view returns (IStdReference.ReferenceData memory bandResponse){
-        return bandCaller.getReferenceData("MATIC", "USD");
+        try bandCaller.getReferenceData("MATIC", "USD") returns
+        (
+            IStdReference.ReferenceData memory bandRes
+        ){
+            bandResponse = bandRes;
+            return bandResponse;
+        }catch{
+            return bandResponse;
+        }
     }
 
     function _getCurrentChainlinkResponse() internal view returns (ChainlinkResponse memory chainlinkResponse) {
