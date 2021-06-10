@@ -15,9 +15,9 @@ contract LockInHalflife is Ownable {
     ILQTYToken public LQTY;
 
     // halflife = (halflifeK * secondsPerBlock) * (0.69 / (-ln(1 - halflifeRatio/1000)))
-    uint256 public constant halflifeK = 23000;  // 2 second per block
+    uint256 public constant halflifeK = 15000;  // 3 second per block
     uint256 public constant halflifeRatio = 1;
-    // halflife = (23000 * 2) * (0.69 / (-ln(1-0.001))) = 31724127.35 seconds = 367.17 days
+    // halflife = (15000 * 3) * (0.69 / (-ln(1-0.001))) = 31034472.41 seconds = 359.19 days
     
     address public constant burnAddress = address(0x000000000000000000000000000000000000dEaD);
 
