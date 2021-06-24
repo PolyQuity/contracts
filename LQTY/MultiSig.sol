@@ -18,7 +18,7 @@ contract MultiSig {
     IERC20  public token;
     
     bool    private initToken;
-    address private tokenSetter;
+    address private immutable tokenSetter;
     
     address[] public owners;
     uint256 public threshold;
@@ -75,6 +75,7 @@ contract MultiSig {
     ) external {
         require(!isOwner[_newOwner], "MultiSig: it's already the owner");
         require(isOwner[msg.sender], "MultiSig: not owner");
+        require(_newOwner != address(0), "MultiSig: invalid owner address");
         require(_threshold >=2 && _threshold <= (owners.length + 1), "MultiSig: invalid threshold");
         
         bytes32 key = keccak256(abi.encodePacked(_newOwner, _threshold));

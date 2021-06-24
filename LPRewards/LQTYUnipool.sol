@@ -49,16 +49,6 @@ contract LPTokenWrapper is ILPTokenWrapper {
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
         uniToken.safeTransfer(msg.sender, amount);
     }
-
-    function stakeInternal(uint256 amount) internal {
-        _totalSupply = _totalSupply.add(amount);
-        _balances[msg.sender] = _balances[msg.sender].add(amount);
-    }
-
-    function withdrawInternal(uint256 amount) internal {
-        _totalSupply = _totalSupply.sub(amount);
-        _balances[msg.sender] = _balances[msg.sender].sub(amount);
-    }
 }
 
 /*
@@ -90,6 +80,7 @@ contract LQTYUnipool is LPTokenWrapper, Ownable, CheckContract, IUnipool {
     uint256 public duration;
     ILQTYToken public lqtyToken;
     address public uniswapV2RouterAddress;
+    address public usdcAddress;
 
     uint256 public periodFinish = 0;
     uint256 public rewardRate = 0;
@@ -117,6 +108,7 @@ contract LQTYUnipool is LPTokenWrapper, Ownable, CheckContract, IUnipool {
     // initialization function
     function setParams(
         address _lqtyTokenAddress,
+        address _usdcTokenAddress,
         address _uniTokenAddress,
         address _uniswapV2RouterAddress,
         uint _duration,
@@ -126,11 +118,13 @@ contract LQTYUnipool is LPTokenWrapper, Ownable, CheckContract, IUnipool {
     onlyOwner
     {
         checkContract(_lqtyTokenAddress);
+        checkContract(_usdcTokenAddress);
         checkContract(_uniTokenAddress);
         checkContract(_uniswapV2RouterAddress);
-
+        
         uniToken = IERC20(_uniTokenAddress);
         lqtyToken = ILQTYToken(_lqtyTokenAddress);
+        usdcAddress = _usdcTokenAddress;
         uniswapV2RouterAddress = _uniswapV2RouterAddress;
         duration = _duration;
 
@@ -219,23 +213,32 @@ contract LQTYUnipool is LPTokenWrapper, Ownable, CheckContract, IUnipool {
 
     function addLiquidity(
         uint256 _lqtyAmount,
-        uint256 _amountLqtyMin,
-        uint256 _amountNativeTokenMin,
+        uint256 _usdcAmount,
+        uint256 _amountLQTYMin,
+        uint256 _amountUSDCMin,
         address _to,
         uint256 _deadline
-    ) public payable returns (uint amountLqty, uint amountNativeToken, uint liquidity) {
+    ) external returns (uint amountLQTY, uint amountUSDC, uint liquidity) {
         IERC20 lqtyTokenCached = IERC20(address(lqtyToken));
         lqtyTokenCached.safeTransferFrom(msg.sender, address(this), _lqtyAmount);
+
+        IERC20 usdcTokenCached = IERC20(usdcAddress);
+        usdcTokenCached.safeTransferFrom(msg.sender, address(this), _usdcAmount);
         
         lqtyTokenCached.safeApprove(uniswapV2RouterAddress, 0);
         lqtyTokenCached.safeApprove(uniswapV2RouterAddress, _lqtyAmount);
 
+        usdcTokenCached.safeApprove(uniswapV2RouterAddress, 0);
+        usdcTokenCached.safeApprove(uniswapV2RouterAddress, _usdcAmount);
+
         // add the liquidity
-        return IUniswapV2Router02(uniswapV2RouterAddress).addLiquidityETH{value : msg.value}(
+        return IUniswapV2Router02(uniswapV2RouterAddress).addLiquidity(
             address(lqtyToken),
+            usdcAddress,
             _lqtyAmount,
-            _amountLqtyMin,
-            _amountNativeTokenMin,
+            _usdcAmount,
+            _amountLQTYMin,
+            _amountUSDCMin,
             _to,
             _deadline
         );
@@ -243,14 +246,11 @@ contract LQTYUnipool is LPTokenWrapper, Ownable, CheckContract, IUnipool {
 
     function removeLiquidity(
         uint256 _liquidity,
-        uint256 _amountLqtyMin,
-        uint256 _amountNativeTokenMin,
+        uint256 _amountLQTYMin,
+        uint256 _amountUSDCMin,
         address _to,
         uint256 _deadline
-    ) external returns (uint amountToken, uint amountNativeToken) {
-
-        require(_liquidity > 0, "Cannot remove 0");
-        require(address(uniToken) != address(0), "Liquidity Pool Token has not been set yet");
+    ) external returns (uint amountLQTY, uint amountUSDC) {
 
         uniToken.safeTransferFrom(msg.sender, address(this), _liquidity);
 
@@ -258,72 +258,14 @@ contract LQTYUnipool is LPTokenWrapper, Ownable, CheckContract, IUnipool {
         uniToken.safeApprove(uniswapV2RouterAddress, _liquidity);
 
         // remove the liquidity
-        return IUniswapV2Router02(uniswapV2RouterAddress).removeLiquidityETH(
+        return IUniswapV2Router02(uniswapV2RouterAddress).removeLiquidity(
             address(lqtyToken),
+            usdcAddress,
             _liquidity,
-            _amountLqtyMin,
-            _amountNativeTokenMin,
+            _amountLQTYMin,
+            _amountUSDCMin,
             _to,
             _deadline
-        );
-    }
-
-    function addLiquidityAndStake(
-        uint256 _lqtyAmount,
-        uint256 _amountLqtyMin,
-        uint256 _amountNativeTokenMin
-    ) external payable lock {
-
-        require(address(uniToken) != address(0), "Liquidity Pool Token has not been set yet");
-
-        (uint amountLqty, uint amountNativeToken, uint liquidity) = addLiquidity(
-            _lqtyAmount,
-            _amountLqtyMin,
-            _amountNativeTokenMin,
-            address(this),
-            now + 60
-        );
-
-        require(liquidity > 0, "Cannot stake 0");
-
-        if (_lqtyAmount.sub(amountLqty) > 0) {
-            IERC20(address(lqtyToken)).safeTransfer(msg.sender, _lqtyAmount.sub(amountLqty));
-        }
-
-        if (msg.value.sub(amountNativeToken) > 0) {
-            payable(msg.sender).transfer(msg.value.sub(amountNativeToken));
-        }
-
-        _updatePeriodFinish();
-        _updateAccountReward(msg.sender);
-
-        stakeInternal(liquidity);
-        emit Staked(msg.sender, liquidity);
-    }
-
-    function withdrawAndRemoveLiquidity(
-        uint256 _amountToWithdraw,
-        uint256 _amountLqtyMin,
-        uint256 _amountNativeTokenMin
-    ) external lock {
-        require(_amountToWithdraw > 0, "Cannot withdraw 0");
-        require(address(uniToken) != address(0), "Liquidity Pool Token has not been set yet");
-
-        _updateAccountReward(msg.sender);
-        withdrawInternal(_amountToWithdraw);
-        emit Withdrawn(msg.sender, _amountToWithdraw);
-
-        uniToken.safeApprove(uniswapV2RouterAddress, 0);
-        uniToken.safeApprove(uniswapV2RouterAddress, _amountToWithdraw);
-
-        // remove the liquidity
-        IUniswapV2Router02(uniswapV2RouterAddress).removeLiquidityETH(
-            address(lqtyToken),
-            _amountToWithdraw,
-            _amountLqtyMin,
-            _amountNativeTokenMin,
-            msg.sender,
-            now + 60
         );
     }
 

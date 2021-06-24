@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 pragma solidity 0.6.11;
+pragma experimental ABIEncoderV2;
 
 import "../Dependencies/CheckContract.sol";
 import "../Dependencies/SafeMath.sol";
@@ -56,9 +57,20 @@ contract LQTYToken is CheckContract, ILQTYToken, Ownable {
 
     struct TransferFee {
         uint256 threshold;
-        uint256 liquidityFee;
-        uint256 taxFee;
+        uint256 stakingFee;
         uint256 deflationFee;
+    }
+
+    struct InitialAllocation {
+        address communityIssuanceAddress;
+        address LQTYlpRewardsAddress;
+        address LUSDlpRewardsAddress;
+        
+        address multisigAddressForPUSDReward;
+        address multisigAddressForTopDeFi;
+        address multisigAddressForLiquidity;
+        
+        address lockInHalflifeAddress;
     }
 
     // --- ERC20 Data ---
@@ -96,71 +108,72 @@ contract LQTYToken is CheckContract, ILQTYToken, Ownable {
 
     address public immutable communityIssuanceAddress;
     address public immutable lqtyStakingAddress;
-    address public immutable multisigAddressForStableCoinDex;
-    address public immutable multisigAddressForLQTYHolders;
-    address public immutable multisigAddressForPartners;
     address public immutable uniswapV2RouterAddress;
     address public immutable uniswapV2PairAddress;
-
+    
+    // address public immutable multisigAddressForStableCoinDex;
+    // address public immutable multisigAddressForLQTYHolders;
+    // address public immutable multisigAddressForPartners;
+    
+    InitialAllocation public initialAllocationAddresses;
+    
     // transfer fee
-    TransferFee private transferFeeStage1 = TransferFee(999 * 1e24, 2, 3, 20);
-    TransferFee private transferFeeStage2 = TransferFee(975 * 1e24, 2, 3, 10);
-    TransferFee private transferFeeStage3 = TransferFee(900 * 1e24, 2, 3, 5);
-    TransferFee private transferFeeStage4 = TransferFee(500 * 1e24, 2, 3, 2);
-    uint private constant transferFeeThreshold = 500 * 1e24;
+    TransferFee private transferFeeStage1 = TransferFee(997 * 1e24, 10, 15);
+    TransferFee private transferFeeStage2 = TransferFee(700 * 1e24, 4,  1);
+    TransferFee private transferFeeStage3 = TransferFee(0, 1, 0);
     uint private constant transferFeeDenominator = 100;
-    uint private constant addLiquityThreshold = 1000 * 1e18;
 
     mapping(address => bool) public _isExcludedFromFee;
 
     // --- Events ---
     event CommunityIssuanceAddressSet(address _communityIssuanceAddress);
     event LQTYStakingAddressSet(address _lqtyStakingAddress);
-    event MultiSigAddressSet(address _multiSigForStableCoinDex, address _multisigAddressForLQTYHolders, address _multisigAddressForPartners);
+    event MultiSigAddressSet(address _multisigAddressForPUSDReward, address _multisigAddressForTopDeFi, address _multisigAddressForLiquidity);
     // --- Functions ---
 
     constructor
     (
-        address _communityIssuanceAddress,
         address _lqtyStakingAddress,
-        address _multisigAddressForStableCoinReward,
-        address _multisigAddressForLQTYHolders,
-        address _multisigAddressForPartners,
         address _uniswapV2RouterAddress,
-        address _lockInHalflifeAddress,
-        address _LUSDlpRewardsAddress,
-        address _LQTYlpRewardsAddress
+        address _liquidityTokenAddress,
+        InitialAllocation memory _initialAllocationAddresses
     )
     public
     {
         // --- Set Address ---
 
-        checkContract(_communityIssuanceAddress);
         checkContract(_lqtyStakingAddress);
-        checkContract(_multisigAddressForStableCoinReward);
-        checkContract(_multisigAddressForLQTYHolders);
-        checkContract(_multisigAddressForPartners);
         checkContract(_uniswapV2RouterAddress);
-        checkContract(_lockInHalflifeAddress);
-        checkContract(_LUSDlpRewardsAddress);
-        checkContract(_LQTYlpRewardsAddress);
+        checkContract(_liquidityTokenAddress);
+
+        checkContract(_initialAllocationAddresses.communityIssuanceAddress);
+
+        checkContract(_initialAllocationAddresses.LQTYlpRewardsAddress);
+        checkContract(_initialAllocationAddresses.LUSDlpRewardsAddress);
+        checkContract(_initialAllocationAddresses.lockInHalflifeAddress);
+
+        checkContract(_initialAllocationAddresses.multisigAddressForPUSDReward);
+        checkContract(_initialAllocationAddresses.multisigAddressForTopDeFi);
+        checkContract(_initialAllocationAddresses.multisigAddressForLiquidity);
 
         deploymentStartTime = block.timestamp;
 
-        communityIssuanceAddress = _communityIssuanceAddress;
+        initialAllocationAddresses = _initialAllocationAddresses;
+        
         lqtyStakingAddress = _lqtyStakingAddress;
-
-        multisigAddressForStableCoinDex = _multisigAddressForStableCoinReward;
-        multisigAddressForLQTYHolders = _multisigAddressForLQTYHolders;
-        multisigAddressForPartners = _multisigAddressForPartners;
+        communityIssuanceAddress = _initialAllocationAddresses.communityIssuanceAddress;
 
         uniswapV2RouterAddress = _uniswapV2RouterAddress;
         IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(_uniswapV2RouterAddress); 
-        uniswapV2PairAddress = IUniswapFactory(_uniswapV2Router.factory()).createPair(address(this), _uniswapV2Router.WETH());
+        uniswapV2PairAddress = IUniswapFactory(_uniswapV2Router.factory()).createPair(address(this), _liquidityTokenAddress);
 
-        emit CommunityIssuanceAddressSet(_communityIssuanceAddress);
+        emit CommunityIssuanceAddressSet(_initialAllocationAddresses.communityIssuanceAddress);
         emit LQTYStakingAddressSet(_lqtyStakingAddress);
-        emit MultiSigAddressSet(_multisigAddressForStableCoinReward, _multisigAddressForLQTYHolders, _multisigAddressForPartners);
+        emit MultiSigAddressSet(
+            _initialAllocationAddresses.multisigAddressForPUSDReward, 
+            _initialAllocationAddresses.multisigAddressForTopDeFi,
+            _initialAllocationAddresses.multisigAddressForLiquidity
+        );
 
         // --- Set EIP 2612 Info ---
 
@@ -174,56 +187,54 @@ contract LQTYToken is CheckContract, ILQTYToken, Ownable {
 
         // --- Initial LQTY allocations ---
 
-        uint depositorsAndFrontEndsEntitlement = _10_MILLION.mul(32);
-        _mint(_communityIssuanceAddress, depositorsAndFrontEndsEntitlement);
+        uint depositorsAndFrontEndsEntitlement = _10_MILLION.mul(12);
+        _mint(_initialAllocationAddresses.communityIssuanceAddress, depositorsAndFrontEndsEntitlement);
 
-        uint LQTYlpRewardsEntitlement = _10_MILLION.mul(119).div(10);
-        _mint(_LQTYlpRewardsAddress, LQTYlpRewardsEntitlement);
+        uint LQTYlpRewardsEntitlement = _10_MILLION.mul(12);
+        _mint(_initialAllocationAddresses.LQTYlpRewardsAddress, LQTYlpRewardsEntitlement);
 
-        uint LUSDlpRewardsEntitlement = _10_MILLION.mul(1).div(10);
-        _mint(_LUSDlpRewardsAddress, LUSDlpRewardsEntitlement);
+        uint LUSDlpRewardsEntitlement = _10_MILLION.mul(2).div(10);
+        _mint(_initialAllocationAddresses.LUSDlpRewardsAddress, LUSDlpRewardsEntitlement);
 
         uint teamAndDevelopers = _10_MILLION.mul(25);
-        _mint(_lockInHalflifeAddress, teamAndDevelopers);
+        _mint(_initialAllocationAddresses.lockInHalflifeAddress, teamAndDevelopers);
 
-        uint stableCoinRewardEntitlement = _10_MILLION.mul(20);
-        _mint(_multisigAddressForStableCoinReward, stableCoinRewardEntitlement);
+        uint PUSDRewardEntitlement = _10_MILLION.mul(41);
+        _mint(_initialAllocationAddresses.multisigAddressForPUSDReward, PUSDRewardEntitlement);
 
-        uint LQTYHoldersEntitlement = _10_MILLION.mul(10);
-        _mint(_multisigAddressForLQTYHolders, LQTYHoldersEntitlement);
+        uint topDeFiEntitlement = _10_MILLION.mul(9);
+        _mint(_initialAllocationAddresses.multisigAddressForTopDeFi, topDeFiEntitlement);
         
-        uint partnersEntitlement = _10_MILLION.mul(1);
-        _mint(_multisigAddressForPartners, partnersEntitlement);
+        uint liquidityEntitlement = _10_MILLION.mul(8).div(10);
+        _mint(_initialAllocationAddresses.multisigAddressForLiquidity, liquidityEntitlement);
     }
 
     function initWhiteList(
         address _halflifeAddress,
-        address _LUSDlpRewardsAddress,
-        address _LQTYlpRewardsAddress,
+        address _addInitialLiquityAddress,
         address[] memory _otherLPRerwardsAddressList
     ) external onlyOwner {
         checkContract(_halflifeAddress);
-        checkContract(_LUSDlpRewardsAddress);
-        checkContract(_LQTYlpRewardsAddress);
 
         _isExcludedFromFee[address(this)] = true;
 
         _isExcludedFromFee[communityIssuanceAddress] = true;
         _isExcludedFromFee[lqtyStakingAddress] = true;
-        _isExcludedFromFee[multisigAddressForStableCoinDex] = true;
-        _isExcludedFromFee[multisigAddressForLQTYHolders] = true;
-        _isExcludedFromFee[multisigAddressForPartners] = true;
-
         _isExcludedFromFee[uniswapV2RouterAddress] = true;
+        
+        _isExcludedFromFee[initialAllocationAddresses.multisigAddressForPUSDReward] = true;
+        _isExcludedFromFee[initialAllocationAddresses.multisigAddressForTopDeFi] = true;
+        _isExcludedFromFee[initialAllocationAddresses.multisigAddressForLiquidity] = true;
+        _isExcludedFromFee[initialAllocationAddresses.LQTYlpRewardsAddress] = true;
+        _isExcludedFromFee[initialAllocationAddresses.LUSDlpRewardsAddress] = true;
 
         _isExcludedFromFee[_halflifeAddress] = true;
-        _isExcludedFromFee[_LUSDlpRewardsAddress] = true;
-        _isExcludedFromFee[_LQTYlpRewardsAddress] = true;
+        _isExcludedFromFee[_addInitialLiquityAddress] = true;
 
         for(uint i = 0; i < _otherLPRerwardsAddressList.length; i++) {
             address lpRewardsAddress = _otherLPRerwardsAddressList[i];
             checkContract(lpRewardsAddress);
-            _isExcludedFromFee[lpRewardsAddress];
+            _isExcludedFromFee[lpRewardsAddress] = true;
         }
 
         _renounceOwnership();
@@ -342,16 +353,18 @@ contract LQTYToken is CheckContract, ILQTYToken, Ownable {
     }
 
     function _tokenTransfer(address sender, address recipient, uint256 amount, bool isExcludedFromFee) internal {
-        if (!isExcludedFromFee && _totalSupply > transferFeeThreshold) {
-            (uint256 taxFee,uint256 liquidityFee,uint256 deflationFee) = _calculateFees(amount);
-            // deflation
-            _burn(sender, deflationFee);
-            // donate tax fee into LQTYStaking pool
-            _transferToLqtyStaking(sender, taxFee);
-            // add liquidity
-            _swapAndAddLiquify(sender, liquidityFee);
-
-            amount = amount.sub(taxFee).sub(liquidityFee).sub(deflationFee);
+        if (!isExcludedFromFee) {
+            (uint256 stakingFee, uint256 deflationFee) = _calculateFees(amount);
+            
+            if (deflationFee > 0) {
+                _burn(sender, deflationFee);
+            }
+            
+            if (stakingFee > 0) {
+                _transferToLqtyStaking(sender, stakingFee);
+            }
+            
+            amount = amount.sub(stakingFee).sub(deflationFee);
         }
 
         _transferStandard(sender, recipient, amount);
@@ -362,72 +375,7 @@ contract LQTYToken is CheckContract, ILQTYToken, Ownable {
         ILQTYStaking(lqtyStakingAddress).increaseF_LQTY(amount);
     }
 
-    function _swapAndAddLiquify(address sender, uint256 amount) internal {
-        // transfer to the contract first
-        _transferStandard(sender, address(this), amount);
-
-        uint256 balance = _balances[address(this)];
-
-        if (balance < addLiquityThreshold) {
-            return;
-        }
-
-        // split the amount into halves
-        uint256 swapAmount = balance.div(2);
-        uint256 liquifyAmount = balance.sub(swapAmount);
-
-        // record the contract's current ETH balance in case of the manual transfer of ETH
-        uint256 currentBalance = address(this).balance;
-        // swap for ETH
-        bool success = _swapTokensForETH(swapAmount);
-        if (!success) {
-            return;
-        }
-
-        uint256 balanceSwapped = address(this).balance.sub(currentBalance);
-        _addLiquidity(liquifyAmount, balanceSwapped);
-        emit SwapAndLiquify(swapAmount, balanceSwapped, liquifyAmount);
-    }
-
-    function _addLiquidity(uint256 liquifyAmount, uint256 ethAmount) private {
-        IUniswapV2Router02 uniswapV2RouterCached = IUniswapV2Router02(uniswapV2RouterAddress);
-        _approve(address(this), address(uniswapV2RouterCached), liquifyAmount);
-
-        // add the liquidity
-        uniswapV2RouterCached.addLiquidityETH{value : ethAmount}(
-            address(this),
-            liquifyAmount,
-            0, // slippage is unavoidable
-            0, // slippage is unavoidable
-            address(0), // lp token to black hole
-            block.timestamp
-        );
-    }
-
-    function _swapTokensForETH(uint256 swapAmount) private returns (bool) {
-        IUniswapV2Router02 uniswapV2RouterCached = IUniswapV2Router02(uniswapV2RouterAddress);
-        // generate the uniswap pair path
-        address[] memory path = new address[](2);
-        path[0] = address(this);
-        path[1] = uniswapV2RouterCached.WETH();
-
-        _approve(address(this), address(uniswapV2RouterCached), swapAmount);
-
-        // make the swap
-        try uniswapV2RouterCached.swapExactTokensForETHSupportingFeeOnTransferTokens(
-            swapAmount,
-            1, // accept any amount of ETH
-            path,
-            address(this),
-            block.timestamp
-        ) {
-            return true;
-         } catch {
-            return false;
-        }
-    }
-
-    function _calculateFees(uint256 amount) internal view returns (uint256, uint256, uint256){
+    function _calculateFees(uint256 amount) internal view returns (uint256, uint256){
         
         TransferFee memory transferFee;
         
@@ -435,16 +383,13 @@ contract LQTYToken is CheckContract, ILQTYToken, Ownable {
             transferFee = transferFeeStage1;
         } else if (_totalSupply > transferFeeStage2.threshold) {
             transferFee = transferFeeStage2;
-        } else if (_totalSupply > transferFeeStage3.threshold) {
+        } else {
             transferFee = transferFeeStage3;
-        } else if (_totalSupply > transferFeeStage4.threshold) {
-            transferFee = transferFeeStage4;
         }
         
-        uint256 taxFee = amount.mul(transferFee.taxFee).div(transferFeeDenominator);
-        uint256 liquidityFee = amount.mul(transferFee.liquidityFee).div(transferFeeDenominator);
+        uint256 stakingFee = amount.mul(transferFee.stakingFee).div(transferFeeDenominator);
         uint256 deflationFee = amount.mul(transferFee.deflationFee).div(transferFeeDenominator);
-        return (taxFee, liquidityFee, deflationFee);
+        return (stakingFee, deflationFee);
     }
 
     function _transferStandard(address sender, address recipient, uint256 amount) internal {
