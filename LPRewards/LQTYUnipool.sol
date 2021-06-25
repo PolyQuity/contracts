@@ -232,7 +232,7 @@ contract LQTYUnipool is LPTokenWrapper, Ownable, CheckContract, IUnipool {
         usdcTokenCached.safeApprove(uniswapV2RouterAddress, _usdcAmount);
 
         // add the liquidity
-        return IUniswapV2Router02(uniswapV2RouterAddress).addLiquidity(
+        (amountLQTY, amountUSDC, liquidity) = IUniswapV2Router02(uniswapV2RouterAddress).addLiquidity(
             address(lqtyToken),
             usdcAddress,
             _lqtyAmount,
@@ -242,6 +242,15 @@ contract LQTYUnipool is LPTokenWrapper, Ownable, CheckContract, IUnipool {
             _to,
             _deadline
         );
+
+        if (_lqtyAmount.sub(amountLQTY) > 0) {
+            lqtyTokenCached.safeTransfer(msg.sender, _lqtyAmount.sub(amountLQTY));
+        }
+
+        if (_usdcAmount.sub(amountUSDC) > 0) {
+            usdcTokenCached.safeTransfer(msg.sender, _usdcAmount.sub(amountUSDC));
+        }
+
     }
 
     function removeLiquidity(
